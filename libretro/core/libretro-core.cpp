@@ -1,6 +1,36 @@
+#include "sysconfig.h"
+#include "sysdeps.h"
+#include <string>
+#include <list>
+#include <stdio.h>
+#include <sstream>
+#include <ctype.h>
+
+#include "options.h"
+#include "uae.h"
+#include "audio.h"
+#include "autoconf.h"
+#include "custom.h"
+#include "inputdevice.h"
+#include "savestate.h"
+#include "memory.h"
+#include "gui.h"
+#include "newcpu.h"
+#include "zfile.h"
+#include "filesys.h"
+#include "fsdb.h"
+#include "disk.h"
+#if defined(__LIBRETRO__)
+#include "sd-retro/sound.h"
+#else
+#include "sd-pandora/sound.h"
+#endif
+
+
 #include "libretro.h"
 
 #include "libretro-core.h"
+
 
 #ifndef NO_LIBCO
 cothread_t mainThread;
@@ -56,6 +86,51 @@ static retro_audio_sample_t audio_cb;
 static retro_audio_sample_batch_t audio_batch_cb;
 static retro_environment_t environ_cb;
 
+//indica lo slot da usare per l'autoload, se 0 disabilitato
+int autoloadslot = 0;
+char *dirSavestate="/storage/system/uae4arm/savestates/";
+
+
+//apiso
+#define EMULATOR_DEF_WIDTH 320
+#define EMULATOR_DEF_HEIGHT 240
+
+// Amiga default models
+
+#define A500 "\
+cpu_type=68000\n\
+chipmem_size=2\n\
+bogomem_size=7\n\
+chipset=ocs\n"
+
+#define A600 "\
+cpu_type=68000\n\
+chipmem_size=2\n\
+fastmem_size=4\n\
+chipset=ecs\n"
+
+#define A1200 "\
+cpu_type=68ec020\n\
+chipmem_size=4\n\
+fastmem_size=8\n\
+chipset=aga\n"
+
+// Amiga default kickstarts
+
+#define A500_ROM 	"/storage/system/kick34005.A500"
+#define A600_ROM 	"/storage/system/kick40063.A600"
+#define A1200_ROM 	"/storage/system/kick40068.A1200"
+
+#define CFGFILE     "/storage/system/uae4arm/conf/uaeconfig.uae"
+
+static char uae_machine[256];
+static char uae_kickstart[16];
+static char uae_config[1024];
+
+int ledtype; //true false into the file
+int defaultw = EMULATOR_DEF_WIDTH;
+int defaulth = EMULATOR_DEF_HEIGHT;
+
 void retro_set_environment(retro_environment_t cb)
 {
    environ_cb = cb;
@@ -78,78 +153,59 @@ void retro_set_environment(retro_environment_t cb)
 
   cb( RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports );
 
-   struct retro_variable variables[] = {
-
-	  { 
-		"arnold_autorun",
-		"Autorun; disabled|enabled" ,
-	  },
-      {
+      struct retro_variable variables[] = {
+     { "uae4arm_autorun","Autorun; disabled|enabled" , },
+	 { "uae4arm_model", "Model; A600|A1200|A500", },
+     { "uae4arm_chipmemorysize", "Chip Memory Size; Default|512K|1M|2M|4M", },
+	 {
          "uae4arm_resolution",
          "Internal resolution; 320x240|640x256|640x400|640x480|768x270|800x600|1024x768|1280x960",
       },
-      {
-         "arnold_Model",
-         "Model: (restart needed); 6128|464|664|6128s|6128+|kcc",
-      },
-      {
-         "arnold_warp",
-         "Wrap Factor:; 1|2|3|4|5",
-      },
-/*
-      {
-         "cap32_Ram",
-         "Ram size:; 64|128|192|512|576",
-      },
-      {
-         "cap32_Statusbar",
-         "Status Bar; disabled|enabled",
-      },
-      {
-         "cap32_Drive",
-         "Drive:; 0|1",
-      },
-      {
-         "cap32_scr_tube",
-         "scr_tube; disabled|enabled",
-      },
-      {
-         "cap32_scr_intensity",
-         "scr_intensity; 5|6|7|8|9|10|11|12|13|14|15",
-      },
-      {
-         "cap32_scr_remanency",
-         "scr_remanency; disabled|enabled",
-      },
-
-      {
-         "cap32_RetroJoy",
-         "Retro joy0; disabled|enabled",
-      },
-*/
-      { NULL, NULL },
+	 { "uae4arm_autoloadstate","AutoLoad State; Disabled|1|2|3|4|5|6|7|8|9|10|11|12", },
+     //{ "puae_analog","Use Analog; OFF|ON", },
+     { "uae4arm_leds","Leds on screen; True|False", },
+     { "uae4arm_cpu_speed", "CPU speed; real|max", },
+     { "uae4arm_cpu_compatible", "CPU compatible; true|false", },
+     { "uae4arm_collision", "Collision level; none|sprites|playfields|full", },
+     //{ "uae4arm_sound_mode", "Sound mode; SND_STEREO|SND_MONO|SND_4CH_CLONEDSTEREO|SND_4CH|SND_6CH_CLONEDSTEREO|SND_6CH|SND_NONE", },
+	 //{ "uae4arm_sound_output", "Sound output; normal|exact|interrupts|none", },
+     //{ "uae4arm_sound_frequency", "Sound frequency; 44100|22050|11025", },
+     //{ "uae4rm_sound_interpol", "Sound interpolation; none|rh|crux|sync", },
+     { "uae4arm_floppy_speed", "Floppy speed; 100|200|300|400|500|600|700|800", },
+     { "uae4arm_immediate_blits", "Immediate blit; false|true", },
+     { "uae4arm_framerate", "Frameskipping; 0|1", },
+     { "uae4arm_ntsc", "NTSC Mode; false|true", },
+     { "uae4arm_refreshrate", "Chipset Refresh Rate; 50|60", },
+     //{ "puae_gfx_linemode", "Line mode; double|none", }, // Removed scanline, we have shaders for this
+     { "uae4arm_gfx_correct_aspect", "Correct aspect ratio; true|false", },
+     //{ "puae_gfx_center_vertical", "Vertical centering; simple|smart|none", },
+     //{ "puae_gfx_center_horizontal", "Horizontal centering; simple|smart|none", },
+	 
+	 { NULL, NULL },
    };
-
    cb(RETRO_ENVIRONMENT_SET_VARIABLES, variables);
 }
 
+//apiso provo a settare direttamente le variabili funzionerà?
 static void update_variables(void)
 {
+   //apiso carico default values
+   default_prefs (&changed_prefs, 0);
+   default_prefs (&currprefs, 0);
+   uae_machine[0] = '\0';
+   uae_config[0] = '\0';
+   struct retro_variable var = {0};
 
-   struct retro_variable var;
-
-   var.key = "arnold_autorun";
+   var.key = "uae4arm_autorun";
    var.value = NULL;
-
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
      if (strcmp(var.value, "enabled") == 0)
 			 autorun = 1;
    }
-
+   
    var.key = "uae4arm_resolution";
    var.value = NULL;
-
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
       char *pch;
@@ -172,6 +228,14 @@ static void update_variables(void)
 
       LOGI("[libretro-vice]: Got size: %u x %u.\n", retrow, retroh);
 
+	  //apiso set preference 
+	  currprefs.gfx_size.width = retrow;
+	  currprefs.gfx_size.height = retroh;
+	  currprefs.gfx_size_win.width = retrow;
+      currprefs.gfx_size_win.height = retroh;
+      currprefs.gfx_size_fs.width = retrow;
+      currprefs.gfx_size_fs.height = retroh;
+  
       CROP_WIDTH =retrow;
       CROP_HEIGHT= (retroh-80);
       VIRTUAL_WIDTH = retrow;
@@ -179,149 +243,367 @@ static void update_variables(void)
       //reset_screen();
    }
 
-   var.key = "arnold_Model";
+
+  /* var.key = "puae_analog";
    var.value = NULL;
 
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
-      char str[100];
-	  int val;
-      snprintf(str, sizeof(str), var.value);
-      val = strtoul(str, NULL, 0);
-	  if (strcmp(var.value, "464") == 0)arnold_model=0;
-	  else if (strcmp(var.value, "664") == 0)arnold_model=1;
-	  else if (strcmp(var.value, "6128") == 0)arnold_model=2;
-	  else if (strcmp(var.value, "6128s") == 0)arnold_model=3;
-	  else if (strcmp(var.value, "464+") == 0)arnold_model=4;
-	  else if (strcmp(var.value, "6128+") == 0)arnold_model=5;
-	  else if (strcmp(var.value, "kcc") == 0)arnold_model=6;
-
+      if (strcmp(var.value, "OFF") == 0)
+        opt_analog = false;
+      if (strcmp(var.value, "ON") == 0)
+        opt_analog = true;
+      ledtype = 1;
+   }*/
+   var.key = "uae4arm_autoloadstate";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+      if (strcmp(var.value, "Disabled") == 0)
+	  {
+		  autoloadslot=0;
+	  }
+      else
+	  {
+		//Implementazione dell'autoload dello state sullo slot 12, serve   
+        autoloadslot = atoi(var.value) ;
+		  
+      }
+   }
+   
+   var.key = "uae4arm_leds";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+      if (strcmp(var.value, "True") == 0)
+      {
+        currprefs.leds_on_screen = 1;        
+      }
+      if (strcmp(var.value, "False") == 0)
+      {
+        currprefs.leds_on_screen = 0;  
+      }
    }
 
-   var.key = "arnold_warp";
+   var.key = "uae4arm_collision";
    var.value = NULL;
-
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
-      char str[100];
-	  int val;
-      snprintf(str, sizeof(str), var.value);
-      val = strtoul(str, NULL, 0);
+      if (strcmp(var.value, "none") == 0)
+      {
+        currprefs.collision_level = 0;        
+      }
+      if (strcmp(var.value, "sprites") == 0)
+      {
+        currprefs.collision_level = 1;  
+      }
+	     if (strcmp(var.value, "playfields") == 0)
+      {
+        currprefs.collision_level = 2;  
+      }
+	     if (strcmp(var.value, "full") == 0)
+      {
+        currprefs.collision_level = 3;  
+      }
+   }
+   
+   var.key = "uae4arm_model";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+		if (strcmp(var.value, "A500") == 0)
+		{
+			//strcat(uae_machine, A500);
+			//strcpy(uae_kickstart, A500_ROM);
+			//currprefs.cpu_type="68000";
+			
+			currprefs.cpu_model = 68000;
+			//currprefs.m68k_speed = 0;
+			//currprefs.cpu_compatible = 0;
+			currprefs.chipmem_size = 2 * 0x80000;
+			currprefs.address_space_24 = 1;
+			currprefs.chipset_mask = CSMASK_ECS_DENISE;
+			strcpy(currprefs.romfile, A500_ROM);
+		}
+		if (strcmp(var.value, "A600") == 0)
+		{
+			//strcat(uae_machine, A600);
+			//strcpy(uae_kickstart, A600_ROM);
+			currprefs.cpu_model = 68000;
+			currprefs.chipmem_size = 2 * 0x80000;
+			//currprefs.m68k_speed = 0;
+			//currprefs.cpu_compatible = 0;
+			currprefs.address_space_24 = 1;
+			currprefs.chipset_mask = CSMASK_ECS_DENISE | CSMASK_ECS_AGNUS;
+			strcpy(currprefs.romfile, A600_ROM);
+		}
+		if (strcmp(var.value, "A1200") == 0)
+		{
+			//strcat(uae_machine, A1200);
+			//strcpy(uae_kickstart, A1200_ROM);
+			//currprefs.cpu_type="68ec020";
+			currprefs.cpu_model = 68020;
+			//currprefs.m68k_speed = 0;
+			//currprefs.cpu_compatible = 0;
+			currprefs.address_space_24 = 1;
+			currprefs.chipset_mask = CSMASK_AGA | CSMASK_ECS_DENISE | CSMASK_ECS_AGNUS;
+			currprefs.chipmem_size = 4 * 0x80000;
+		    strcpy(currprefs.romfile, A1200_ROM);
+		}
+   }
+
+   var.key = "uae4arm_chipmemorysize";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
       
-	 // CPC_SetWarpFactor(val);
-
+	  //Default|512K|1M|2M|4M|8M
+	  if (strcmp(var.value, "Default") == 0)
+      {
+		//se default tengo quello di default per il sistema  settata sopra 
+        //currprefs.leds_on_screen = 1;        
+      }
+      if (strcmp(var.value, "512K") == 0)
+      {
+       currprefs.chipmem_size = 1 * 0x80000;
+      }
+	  if (strcmp(var.value, "1M") == 0)
+      {
+       currprefs.chipmem_size = 2 * 0x80000; 
+      }
+      if (strcmp(var.value, "2M") == 0)
+      {
+       currprefs.chipmem_size = 4 * 0x80000;
+      }
+	   if (strcmp(var.value, "4M") == 0)
+      {
+       currprefs.chipmem_size = 8 * 0x80000;
+      }
+	  
    }
-
-#if 0
-   var.key = "cap32_Ram";
+   
+   var.key = "uae4arm_cpu_speed";
    var.value = NULL;
-
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
-      char str[100];
-	  int val;
-      snprintf(str, sizeof(str), var.value);
-      val = strtoul(str, NULL, 0);
-      
-	  if(retro_ui_finalized)
-		  change_ram(val);
-
-   }
-
-   var.key = "cap32_Statusbar";
-   var.value = NULL;
-
-   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-   {
-		if(retro_ui_finalized){
-    		  if (strcmp(var.value, "enabled") == 0)
-    		     cap32_statusbar=1;
-    		  if (strcmp(var.value, "disabled") == 0)
-    		     cap32_statusbar=0;
+	  	//strcat(uae_config, "cpu_speed=");
+		//strcat(uae_config, var.value);
+		//strcat(uae_config, "\n");
+	   if (strcmp(var.value, "max") == 0)
+		{
+			currprefs.m68k_speed = -1;
 		}
-		else {
-				if (strcmp(var.value, "enabled") == 0)RETROSTATUS=1;
-				if (strcmp(var.value, "disabled") == 0)RETROSTATUS=0;
+		else
+		{
+			currprefs.m68k_speed = 0;
 		}
+	  
    }
 
-
-   var.key = "cap32_Drive";
+   var.key = "uae4arm_cpu_compatible";
    var.value = NULL;
-
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
-      char str[100];
-	  int val;
-      snprintf(str, sizeof(str), var.value);
-      val = strtoul(str, NULL, 0);
-
-	  if(retro_ui_finalized)
-		  ;//set_drive_type(8, val);
-	  else RETRODRVTYPE=val;
-   }
-
-   var.key = "cap32_scr_tube";
-   var.value = NULL;
-
-   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-   {
-		if(retro_ui_finalized){
-      		if (strcmp(var.value, "enabled") == 0){
-         		  CPC.scr_tube=1;video_set_palette();}
-      		if (strcmp(var.value, "disabled") == 0){
-         		 CPC.scr_tube=0;video_set_palette();}
+		//strcat(uae_config, "cpu_compatible=");
+		if (strcmp(var.value, "true") == 0)
+		{
+			currprefs.cpu_compatible = 1;
 		}
-   }
-
-   var.key = "cap32_scr_intensity";
-   var.value = NULL;
-
-   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-   {
-      char str[100];
-	  int val;
-      snprintf(str, sizeof(str), var.value);
-      val = strtoul(str, NULL, 0);
-
-	  if(retro_ui_finalized){
-		  CPC.scr_intensity = val;
-		  video_set_palette();
-	  }	
+		else
+		{
+			currprefs.cpu_compatible = 0;
+		}
+		//strcat(uae_config, var.value);
+		//strcat(uae_config, "\n");
    }
 /*
-   var.key = "cap32_scr_remanency";
+   var.key = "uae4arm_sound_mode";
    var.value = NULL;
-
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
-		if(retro_ui_finalized){
-      		if (strcmp(var.value, "enabled") == 0){
-         		  CPC.scr_remanency=1;video_set_palette();}//set_truedrive_emultion(1);
-      		if (strcmp(var.value, "disabled") == 0){
-         		 CPC.scr_remanency=0;video_set_palette();}//set_truedrive_emultion(0);
-		}
+      if (strcmp(var.value, "SND_MONO") == 0)
+      {
+        currprefs.sound_stereo = 0;        
+      }
+      if (strcmp(var.value, "SND_STEREO") == 0)
+      {
+        currprefs.sound_stereo = 1;  
+      }
+	  if (strcmp(var.value, "SND_4CH_CLONEDSTEREO") == 2)
+      {
+        currprefs.sound_stereo = 2;  
+      }
+      if (strcmp(var.value, "SND_4CH") == 0)
+      {
+        currprefs.sound_stereo = 3;  
+      }
+      if (strcmp(var.value, "SND_6CH_CLONEDSTEREO") == 0)
+      {
+        currprefs.sound_stereo = 4;  
+      }
+      if (strcmp(var.value, "SND_6CH") == 0)
+      {
+        currprefs.sound_stereo = 5;  
+      }
+      if (strcmp(var.value, "SND_NONE") == 0)
+      {
+        currprefs.sound_stereo = 6;  
+      }
+   }
+   
+   var.key = "uae4arm_sound_output";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+      if (strcmp(var.value, "normal") == 0)
+      {
+        currprefs.produce_sound = 0;        
+      }
+      if (strcmp(var.value, "exact") == 0)
+      {
+        currprefs.produce_sound = 1;  
+      }
+	     if (strcmp(var.value, "interrupts") == 0)
+      {
+        currprefs.produce_sound = 2;  
+      }
+	     if (strcmp(var.value, "none") == 0)
+      {
+        currprefs.produce_sound = 3;  
+      }
+   
+   }
+
+   var.key = "uae4arm_sound_frequency";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+		currprefs.sound_freq=atoi(var.value);
+   }
+
+  
+   var.key = "uae4rm_sound_interpol";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+	  if (strcmp(var.value, "none") == 0)
+      {
+        currprefs.sound_interpol = 0;        
+      }
+      if (strcmp(var.value, "anti") == 0)
+      {
+        currprefs.sound_interpol = 1;  
+      }
+	  if (strcmp(var.value, "sinc") == 0)
+      {
+        currprefs.sound_interpol = 2;  
+      }
+	  if (strcmp(var.value,  "rh") == 0)
+      {
+        currprefs.sound_interpol = 3;  
+      }
+	  if (strcmp(var.value,  "crux") == 0)
+      {
+        currprefs.sound_interpol = 4;  
+      }
    }
 */
-   var.key = "cap32_RetroJoy";
+   var.key = "uae4arm_floppy_speed";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+	    currprefs.floppy_speed=atoi(var.value);
+   }
+
+   
+   var.key = "uae4arm_immediate_blits";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+		if (strcmp(var.value, "true") == 0)
+		{
+			currprefs.immediate_blits = 1;
+		}
+		else
+		{
+			currprefs.immediate_blits = 0;
+		}
+   }
+   var.key = "uae4arm_framerate";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+	    currprefs.gfx_framerate=atoi(var.value);
+   }
+
+   var.key = "uae4arm_ntsc";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+		if (strcmp(var.value, "true") == 0)
+		{
+			currprefs.ntscmode = 1;
+		}
+		else
+		{
+			currprefs.ntscmode = 0;
+		}
+   }
+
+   var.key = "uae4arm_refreshrate";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+	    currprefs.chipset_refreshrate=atoi(var.value);
+   }
+
+   /*var.key = "puae_gfx_linemode";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+		strcat(uae_config, "gfx_linemode=");
+		strcat(uae_config, var.value);
+		strcat(uae_config, "\n");
+   }*/
+
+   var.key = "uae4arm_gfx_correct_aspect";
+   var.value = NULL;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+		//strcat(uae_config, "gfx_correct_aspect=");
+		//strcat(uae_config, var.value);
+		//strcat(uae_config, "\n");
+		if (strcmp(var.value, "true") == 0)
+		{
+			currprefs.gfx_correct_aspect = 1;
+		}
+		else
+		{
+			currprefs.gfx_correct_aspect = 0;
+		}
+   }
+
+  /* var.key = "puae_gfx_center_vertical";
    var.value = NULL;
 
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
-		if(retrojoy_init){
-		      if (strcmp(var.value, "enabled") == 0)
-		         ;//resources_set_int( "RetroJoy", 1);
-		      if (strcmp(var.value, "disabled") == 0)
-		         ;//resources_set_int( "RetroJoy", 0);
-		}
-		else {
-			if (strcmp(var.value, "enabled") == 0)RETROJOY=1;
-			if (strcmp(var.value, "disabled") == 0)RETROJOY=0;
-		}
-
+		strcat(uae_config, "gfx_center_vertical=");
+		strcat(uae_config, var.value);
+		strcat(uae_config, "\n");
    }
-#endif
+
+   var.key = "puae_gfx_center_horizontal";
+   var.value = NULL;
+
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+		strcat(uae_config, "gfx_center_horizontal=");
+		strcat(uae_config, var.value);
+		strcat(uae_config, "\n");
+   }*/
 }
+
 
 static void retro_wrap_emulator()
 {    

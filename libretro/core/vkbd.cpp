@@ -1,6 +1,20 @@
+#include <iostream>
+
+#include <string>
+#include <list>
+#include <stdio.h>
+#include <sstream>
+#include "sysconfig.h"
+#include "sysdeps.h"
+#include "config.h"
+#include "autoconf.h"
+#include "options.h"
+#include "gui.h"
+#include "custom.h"
+#include "uae.h"
+#include "disk.h"
 
 #include "libretro.h"
-
 #include "retroscreen.h"
 #include "libretro-core.h"
 #include "vkbd_def.h"
@@ -23,7 +37,10 @@ unsigned *pix=(unsigned*)buffer;
 unsigned short *pix=(unsigned short *)buffer;
 #endif
 
-   page = (NPAGE == -1) ? 0 : 5*NPLGN;
+	//apiso
+   //page = (NPAGE == -1) ? 0 : 5*NPLGN;
+   page = NPAGE*5*NPLGN;
+   
    coul = RGB565(28, 28, 31);
    BKGCOLOR = (KCOL>0?0xFF808080:0);
 
@@ -48,7 +65,8 @@ int check_vkey2(int x,int y)
 {
    int page;
    //check which key is press
-   page= (NPAGE==-1) ? 0 : 5*NPLGN;
+   //page= (NPAGE==-1) ? 0 : 5*NPLGN;
+   page= NPAGE*5*NPLGN;
    return MVk[y*NPLGN+x+page].val;
 }
 

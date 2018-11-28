@@ -1,6 +1,28 @@
 #include "libretro.h"
 #include "libretro-core.h"
 #include "retroscreen.h"
+
+#include <string>
+#include <list>
+#include <stdio.h>
+#include <sstream>
+#include "sysconfig.h"
+#include "sysdeps.h"
+#include "config.h"
+#include "autoconf.h"
+#include "options.h"
+#include "gui.h"
+#include "custom.h"
+#include "uae.h"
+#include "disk.h"
+
+#include "memory.h"
+#include "zfile.h"
+#include "newcpu.h"
+#include "savestate.h"
+#include "audio.h"
+#include "filesys.h"
+
 //CORE VAR
 #ifdef _WIN32
 char slash = '\\';
@@ -16,6 +38,7 @@ char DISKA_NAME[512]="\0";
 char DISKB_NAME[512]="\0";
 char TAPE_NAME[512]="\0";
 char CART_NAME[512]="\0";
+extern char *dirSavestate;
 
 //TIME
 #ifdef __CELLOS_LV2__
@@ -62,8 +85,8 @@ int snd_sampler = 44100 / 50;
 //PATH
 char RPATH[512];
 
-//EMU FLAGS
-int NPAGE=-1, KCOL=1, BKGCOLOR=0;
+//EMU FLAGS  //apiso abilitazione pagina 3
+int NPAGE=0, KCOL=1, BKGCOLOR=0;
 int SHOWKEY=-1;
 
 #if defined(ANDROID) || defined(__ANDROID__)
@@ -79,9 +102,16 @@ int touch=-1; // gui mouse btn
 //JOY
 int al[2][2];//left analog1
 int ar[2][2];//right analog1
-unsigned char MXjoy[2]; // joy
-int NUMjoy=1;
+//apiso modifico tipo mxjoy la metto uguale a quello in joystick.cpp 
+//unsigned char MXjoy[2]; // joy
+int MXjoy[2];
+//int NUMjoy=1;
 int NUMDRV=1;
+
+int mouseemulated=0;
+
+//apiso percorso del file di boot servirà come nome per i savestate
+extern char bootdiskpth[MAX_DPATH];
 
 //MOUSE
 extern int pushi;  // gui mouse btn
@@ -405,11 +435,15 @@ void retro_virtualkb(void)
          if(i==-1){
             oldi=-1;
 		 }
-         if(i==-2)
+         if(i==-2)  //Gestione pagine
          {
-            NPAGE=-NPAGE;oldi=-1;
+			//apiso gestione 3 pagine 
+			NPAGE=NPAGE+1;
+			if 	(NPAGE>2)NPAGE=0;
+            //NPAGE=-NPAGE;
+			oldi=-1;
          }
-         else if(i==-3)
+         else if(i==-3) //KDB bgcolor
          {
             //KDB bgcolor
             KCOL=-KCOL;
@@ -422,11 +456,14 @@ void retro_virtualkb(void)
             Screen_SetFullUpdate(0);
             SHOWKEY=-SHOWKEY;
          }
-         else if(i==-5)
+         else if(i==-5)  //change disk
          {
 			//FLIP DSK PORT 1-2
-			NUMDRV=-NUMDRV;
-            oldi=-1;
+			//NUMDRV=-NUMDRV;
+            
+			bool plus=true;
+			changedisk(plus);
+			oldi=-1;
          }
          else if(i==-6)
          {
@@ -477,11 +514,14 @@ void retro_virtualkb(void)
             }
 			else if(i==-13) //GUI
             {     
-			    pauseg=1;
-				GUISTATE=GUI_MAIN;
-				SHOWKEY=-SHOWKEY;
-				Screen_SetFullUpdate(0);
-               oldi=-1;
+			    //pauseg=1;
+				//GUISTATE=GUI_MAIN;
+				//SHOWKEY=-SHOWKEY;
+				//Screen_SetFullUpdate(0);
+					
+				bool plus=false;
+				changedisk(plus);
+				oldi=-1;
             }
 			else if(i==-14) //JOY PORT TOGGLE
             {    
@@ -490,7 +530,77 @@ void retro_virtualkb(void)
                SHOWKEY=-SHOWKEY;
                oldi=-1;
             }
-            else
+            
+			else if(i>-42 and i<-29) //Save State
+            {    
+ 			    int slot = -i -30 ;
+				std::stringstream convert;   // stream used for the conversion
+				convert << slot;      
+				std::string strslot = convert.str();
+				
+				//std::string sfpath=changed_prefs.df[0];
+				std::string sfpath=bootdiskpth;
+				std::size_t ffinedisk = sfpath.find_last_of("/")+1;
+				//wrong file name
+				if (ffinedisk==std::string::npos)return ;
+				std::string fname=sfpath.substr(ffinedisk,sfpath.length()-ffinedisk);
+				//std::string fpath=sfpath.substr(0,ffinedisk);
+				std::string sState = dirSavestate; 
+				sState.append(fname);
+				sState.append(".SAV");
+				sState.append(strslot);
+				//write_log("SAVE Slot: %d     Filename: %s \n",slot,sState.c_str());
+				/*
+				std::string fname=changed_prefs.df[0]; //+ ".SAV" + strslot;
+				fname.append(".SAV");
+				fname.append(strslot);
+				write_log("SAVE Slot: %d     Filename: %s \n",slot,fname.c_str());
+				*/
+				if (fname.length() > 0)
+				{
+					//1 compressed
+					savestate_initsave(sState.c_str(), 1, 1);
+					save_state(sState.c_str(), "...");
+//					savestate_state = STATE_DOSAVE; // Just to create the screenshot
+//					delay_savestate_frame = 2;
+//					gui_running = false;
+				}
+				//int lfname =fname.length();
+				oldi=-1;
+            }
+			else if(i>-62 and i<-49) //Load State
+            {    
+ 			    int slot = -i -50 ;
+				std::stringstream convert;   // stream used for the conversion
+				convert << slot;      
+				std::string strslot = convert.str();
+				//std::string sfpath=changed_prefs.df[0];
+				std::string sfpath=bootdiskpth;
+				std::size_t ffinedisk = sfpath.find_last_of("/")+1;
+				//wrong file name
+				if (ffinedisk==std::string::npos)return ;
+				std::string fname=sfpath.substr(ffinedisk,sfpath.length()-ffinedisk);
+				//std::string fpath=sfpath.substr(0,ffinedisk);
+				std::string sState = dirSavestate; 
+				sState.append(fname);
+				sState.append(".SAV");
+				sState.append(strslot);
+				//write_log("LOAD Slot: %d     Filename: %s \n",slot,sState.c_str());
+				//Verifico esistenza file
+				if (fname.length() > 0)				{
+					FILE * f = fopen(sState.c_str(), "rbe");
+					if (f!=NULL)
+					{
+						fclose(f);
+						savestate_initsave(sState.c_str(), 2, 0);
+						savestate_state = STATE_DORESTORE;
+						//gui_running = false;
+						write_log("File trovato eseguito Restore \n");
+					}
+				}
+				oldi=-1;
+            }
+			else
             {
                oldi=i;
 			   //retro_key_down(oldi); 
@@ -648,214 +758,246 @@ int Retro_PollEvent()
    }
 
  
-if(pauseg==0){ // if emulation running
+	if(pauseg==0){ // if emulation running
 
-	  //Joy mode
-
-      for(i=4;i<10;i++)
-      {
-         if( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i))
-	 {
-            MXjoy[0] |= vbt[i]; // Joy press
-            MXjoy[1] |= vbt[i]; // Joy press
-	
-	 }
-      }
-
-      //if(SHOWKEY==-1)retro_joy0_test(MXjoy[0]);
-
-
-if(amiga_devices[0]==RETRO_DEVICE_AMIGA_JOYSTICK){
-   //shortcut for joy mode only
-
-   i=1;//show vkbd toggle
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) )
-   {
-      mbt[i]=0;
-      SHOWKEY=-SHOWKEY;
-   }
-
-   i=3;//type ENTER
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) )
-   {
-      mbt[i]=0;
-	  //kbd_buf_feed("\n");
-   }
-
-/*
-   i=10;//type DEL / ZOOM
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
-      mbt[i]=0;
-      ZOOM++;if(ZOOM>4)ZOOM=-1;
-
-   }
-*/
-
-   i=0;//type RUN"
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
-      mbt[i]=0;
-	  //kbd_buf_feed("RUN\"");
-   }
-
-   i=10;//Type CAT\n 
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
-      mbt[i]=0;
-	  //kbd_buf_feed("CAT\n");
-      //Screen_SetFullUpdate();
-   }
-
-   i=12;//show/hide statut
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
-      mbt[i]=0;
-      STATUTON=-STATUTON;
-     // Screen_SetFullUpdate();
-   }
-
-   i=13;//auto load tape
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
-      mbt[i]=0;
-      //kbd_buf_feed("|tape\nrun\"\n^");
-   }
-
-   i=11;//reset
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
-      mbt[i]=0;
-     // emu_reset();		
-   }
-/*
-   i=2;//mouse/joy toggle
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
-      mbt[i]=0;
-      MOUSE_EMULATED=-MOUSE_EMULATED;
-   }
-*/
-   // L3 -> gui load
-   if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, 14)){ 
-		GUISTATE=GUI_LOAD;
-		pauseg=1;
-   }
-   // R3 -> gui snapshot
-   if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, 15)){ 
-		GUISTATE=GUI_SNAP;
-		pauseg=1;
-   }
-
-}//if amiga_devices=joy
+		  //Joy mode
+		  //apiso tento di abilitare joy1 apparentemente adesso viene impostato con i valori dello 0
+	  if(SHOWKEY==-1)
+	  {
+		for(i=4;i<10;i++)
+		{
+			 if( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i))
+			 {
+					MXjoy[0] |= vbt[i]; // Joy press
+					//MXjoy[1] |= vbt[i]; // Joy press
+			
+			 }
+			 //apiso leggo imput joy1 e setto mxjoy1 
+			 //penso sia stato fatto cosi' per l'utilizzo del mouse sempre con il joy 0 
+			 if( input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, i))
+			 {
+					//MXjoy[0] |= vbt[i]; // Joy press
+					MXjoy[1] |= vbt[i]; // Joy press
+					//qui entra correttamente
+					//write_log("Entrato Joy1 I:%d   state:%d \n" ,i,vbt[i]);
+			 }
+		  }
+		}
+		  //if(SHOWKEY==-1)retro_joy0_test(MXjoy[0]);
 
 
-}// if pauseg=0
-else{
-   // if in gui
-/*
-   i=2;//mouse/joy toggle
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
-      mbt[i]=0;
-      MOUSE_EMULATED=-MOUSE_EMULATED;
-   }
-*/
-}
+	if(amiga_devices[0]==RETRO_DEVICE_AMIGA_JOYSTICK){
+	   //shortcut for joy mode only
 
-   i=2;//mouse/joy toggle
-   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
-      mbt[i]=1;
-   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
-      mbt[i]=0;
-      MOUSE_EMULATED=-MOUSE_EMULATED;
-   }
+	   i=1;//show vkbd toggle
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) )
+	   {
+		  mbt[i]=0;
+		  SHOWKEY=-SHOWKEY;
+	   }
 
-   if(MOUSE_EMULATED==1){
-//printf("-----------------mouse %d \n",pauseg);
-	  if(slowdown>0 && pauseg!=0 )return 1;
-//printf("-----------------mouse %d \n",pauseg);
-      if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT))rmouse_x += PAS;
-      if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT))rmouse_x -= PAS;
-      if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN))rmouse_y += PAS;
-      if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP))rmouse_y -= PAS;
-      mouse_l=input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A);
-      mouse_r=input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B);
+	   i=3;//type ENTER
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) )
+	   {
+		  mbt[i]=0;
+		  //kbd_buf_feed("\n");
+	   }
 
-      PAS=SAVPAS;
+	/*
+	   i=10;//type DEL / ZOOM
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
+		  mbt[i]=0;
+		  ZOOM++;if(ZOOM>4)ZOOM=-1;
 
-	  slowdown=1;
-   }
-   else {
-//printf("-----------------%d \n",pauseg);
-      mouse_wu = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELUP);
-      mouse_wd = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELDOWN);
-//if(mouse_wu || mouse_wd)printf("-----------------MOUSE UP:%d DOWN:%d\n",mouse_wu, mouse_wd);
-      rmouse_x = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
-      rmouse_y = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
-      mouse_l    = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT);
-      mouse_r    = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT);
-   }
+	   }
+	*/
 
-   static int mmbL=0,mmbR=0;
+	   i=0;//type RUN"
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
+		  mbt[i]=0;
+		  //kbd_buf_feed("RUN\"");
+	   }
 
-   if(mmbL==0 && mouse_l){
+	   i=10;//Type CAT\n 
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
+		  mbt[i]=0;
+		  //kbd_buf_feed("CAT\n");
+		  //Screen_SetFullUpdate();
+	   }
 
-      mmbL=1;		
-      pushi=1;
-	  touch=1;
+	   i=12;//show/hide statut
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
+		  mbt[i]=0;
+		  STATUTON=-STATUTON;
+		 // Screen_SetFullUpdate();
+	   }
 
-   }
-   else if(mmbL==1 && !mouse_l) {
+	   i=13;//auto load tape
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
+		  mbt[i]=0;
+		  //kbd_buf_feed("|tape\nrun\"\n^");
+	   }
 
-      mmbL=0;
-      pushi=0;
-	  touch=-1;
-   }
+	   i=11;//reset
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
+		  mbt[i]=0;
+		 // emu_reset();		
+	   }
+	/*
+	   i=2;//mouse/joy toggle
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
+		  mbt[i]=0;
+		  MOUSE_EMULATED=-MOUSE_EMULATED;
+	   }
+	*/
+	   // L3 -> gui load
+	   if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, 14)){ 
+			GUISTATE=GUI_LOAD;
+			pauseg=1;
+	   }
+	   // R3 -> gui snapshot
+	   if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, 15)){ 
+			GUISTATE=GUI_SNAP;
+			pauseg=1;
+	   }
 
-   if(mmbR==0 && mouse_r){
-      mmbR=1;		
-   }
-   else if(mmbR==1 && !mouse_r) {
-      mmbR=0;
-   }
+	}//if amiga_devices=joy
 
-if(pauseg==0 && c64mouse_enable){
-/*
-	mouse_move((int)mouse_x, (int)mouse_y);
-	mouse_button(0,mmbL);
-	mouse_button(1,mmbR);
-*/
-}
 
-   gmx+=rmouse_x;
-   gmy+=rmouse_y;
-   if(gmx<0)gmx=0;
-   if(gmx>retrow-1)gmx=retrow-1;
-   if(gmy<0)gmy=0;
-   if(gmy>retroh-1)gmy=retroh-1;
+	}// if pauseg=0
+	else{
+	   // if in gui
+	/*
+	   i=2;//mouse/joy toggle
+	   if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+		  mbt[i]=1;
+	   else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
+		  mbt[i]=0;
+		  MOUSE_EMULATED=-MOUSE_EMULATED;
+	   }
+	*/
+	}
+	if(SHOWKEY==-1)
+	  {
+		
+			i=2;//mouse/joy toggle
+			if ( input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) && mbt[i]==0 )
+			  mbt[i]=1;
+			else if ( mbt[i]==1 && ! input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, i) ){
+			  mbt[i]=0;
+			  MOUSE_EMULATED=-MOUSE_EMULATED;
+			}
 
-   lastmx +=rmouse_x;
-   lastmy +=rmouse_y;
-newmousecounters=1;
-if(pauseg==0) buttonstate[0] = mmbL;
-if(pauseg==0) buttonstate[1] = mmbR;
+			if(MOUSE_EMULATED==1){
+			mouseemulated=1;
+			//printf("-----------------mouse %d \n",pauseg);
+			  if(slowdown>0 && pauseg!=0 )return 1;
+			//printf("-----------------mouse %d \n",pauseg);
+			  if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT))rmouse_x += PAS;
+			  if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT))rmouse_x -= PAS;
+			  if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN))rmouse_y += PAS;
+			  if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP))rmouse_y -= PAS;
+			  mouse_l=input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A);
+			  mouse_r=input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B);
 
- // if(SHOWKEY && pauseg==0)retro_virtualkb();
+			  PAS=SAVPAS;
 
-return 1;
+			  slowdown=1;
+			}
+			else {
+			   //apiso se non ho premuto il tasto di emulazione mouse metto a 0 pandora_custom_dpad
+			   //questo dovrebbe consentire nella imputdevice di scegliere se restituire i valori 
+			   //del joy o quelli del mouse 
+			   mouseemulated=0;
+
+			//printf("-----------------%d \n",pauseg);
+			  mouse_wu = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELUP);
+			  mouse_wd = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELDOWN);
+			//if(mouse_wu || mouse_wd)printf("-----------------MOUSE UP:%d DOWN:%d\n",mouse_wu, mouse_wd);
+			  rmouse_x = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
+			  rmouse_y = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
+			  mouse_l    = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT);
+			  mouse_r    = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT);
+			}
+			//write_log("core-mapper mouseemulated:%d \n",mouseemulated);
+			static int mmbL=0,mmbR=0;
+
+			//apiso
+			//write_log("Stato Button mmbL: %d   mouse_l: %d",mmbL,mouse_l);
+
+			if(mmbL==0 && mouse_l){
+
+			  mmbL=1;		
+			  pushi=1;
+			  touch=1;
+
+			}
+			else if(mmbL==1 && !mouse_l) {
+
+			  mmbL=0;
+			  pushi=0;
+			  touch=-1;
+			}
+
+			//apiso
+			//write_log("Stato Button mmbR: %d   mouse_r: %d",mmbR,mouse_r);
+			if(mmbR==0 && mouse_r){
+			  mmbR=1;		
+			  //apiso abilitazione pulsante destro mouse
+			  pushi=1;
+			  touch=1;
+			}
+			else if(mmbR==1 && !mouse_r) {
+			  mmbR=0;
+			  //apiso abilitazione pulsante destro mouse
+			  pushi=0;
+			  touch=-1;
+			}
+
+			//if(pauseg==0 && c64mouse_enable){
+			/*
+			mouse_move((int)mouse_x, (int)mouse_y);
+			mouse_button(0,mmbL);
+			mouse_button(1,mmbR);
+			*/
+			//}
+
+			gmx+=rmouse_x;
+			gmy+=rmouse_y;
+			if(gmx<0)gmx=0;
+			if(gmx>retrow-1)gmx=retrow-1;
+			if(gmy<0)gmy=0;
+			if(gmy>retroh-1)gmy=retroh-1;
+
+			lastmx +=rmouse_x;
+			lastmy +=rmouse_y;
+			newmousecounters=1;
+			if(pauseg==0) buttonstate[0] = mmbL;
+
+			//apiso il bottone right è il 2 nella libreria SDL
+			if(pauseg==0) buttonstate[2] = mmbR;
+
+			// if(SHOWKEY && pauseg==0)retro_virtualkb();
+		}
+   return 1;
 
 }
 
