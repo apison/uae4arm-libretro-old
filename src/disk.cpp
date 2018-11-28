@@ -10,6 +10,10 @@
   * High Density Drive Handling by Dr. Adil Temel (C) 2001 [atemel1@hotmail.com]
   *
   */
+#include <string>
+#include <list>
+#include <stdio.h>
+#include <sstream>
 
 #include "sysconfig.h"
 #include "sysdeps.h"
@@ -2820,3 +2824,58 @@ uae_u8 *save_floppy(int *len, uae_u8 *dstptr)
 }
 
 #endif /* SAVESTATE */
+
+void changedisk(bool plus)
+{
+			std::string fname=changed_prefs.df[0];
+			int lfname =fname.length();
+
+			std::string constdisk="(Disk ";
+			std::string constdiskof=" of ";
+			std::size_t finiziodisk = fname.find(constdisk);
+			if (finiziodisk==std::string::npos)return;
+			std::size_t finiziodiskof = fname.find(constdiskof,finiziodisk);
+			if (finiziodiskof==std::string::npos)return;
+			std::size_t ffinedisk = fname.find_last_of(")")+1;
+			if (ffinedisk==std::string::npos)return;
+			
+			std::string strndisk=fname.substr(finiziodisk+constdisk.length(),finiziodiskof-finiziodisk-constdisk.length());
+			std::string strntotdisk=fname.substr(finiziodiskof+constdiskof.length(),ffinedisk-finiziodiskof-constdiskof.length()-1);
+			std::string fnamenodsk=fname.substr(0,finiziodisk);
+			std::string strdisk = fname.substr(finiziodisk,ffinedisk-finiziodisk);
+			std::string ext = fname.substr(ffinedisk,fname.length()-ffinedisk);
+			int newdisk=0;
+			int totdisk= atoi(strntotdisk.c_str());
+			if (plus)
+			{
+				//Swappo con disco superiore (se disk 1 swappo con 2
+				newdisk= atoi(strndisk.c_str());
+				newdisk=newdisk+1;
+				if (newdisk>totdisk) 
+				{
+					newdisk=1;
+				}
+			}
+			else
+			{
+				//Swappo con disco superiore (se disk 1 swappo con 2
+				newdisk= atoi(strndisk.c_str());
+				newdisk=newdisk-1;
+				if (newdisk<1) 
+				{
+					newdisk=totdisk;
+				}
+			}
+			std::string strnewdisk;
+			std::stringstream convert;   // stream used for the conversion
+			convert << newdisk;      // insert the textual representation of 'Number' in the characters in the stream
+			strnewdisk = convert.str();
+			std::string strtotdisk;
+			std::stringstream converttot;
+			converttot << totdisk;      // insert the textual representation of 'Number' in the characters in the stream
+			strtotdisk = converttot.str();
+			std::string strnefile = fnamenodsk + constdisk + strnewdisk + constdiskof + strtotdisk + ")" + ext;
+			disk_insert(0, strnefile.c_str());
+			
+}
+
