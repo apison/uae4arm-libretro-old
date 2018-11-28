@@ -24,11 +24,32 @@
 #include "joystick.h"
 #include "picasso96.h"
 
+extern int mouseemulated;
 
 void write_inputdevice_config (struct uae_prefs *p, struct zfile *f)
 {
   cfgfile_write (f, "input.joymouse_speed_analog=%d\n", p->input_joymouse_multiplier);
   cfgfile_write (f, "input.autofire=%d\n", p->input_autofire_framecnt);
+}
+
+extern uae_u8 handle_joystick_buttons (uae_u8 dra)
+{
+  uae_u8 but = 0;
+	if (mouseemulated == 1) 
+    {
+		if (!buttonstate[0])
+	    but |= 0x40;
+	}
+	else
+	{
+		//apiso joystick button 0 è bit 7 dovrebbe essere già in buttonstate[0], 
+		if (!(joy0button & 1))
+			but |= 0x40;
+	}
+	if (!(joy1button & 1))
+	    but |= 0x80;
+	
+	return but;
 }
 
 static char *getstring (char **pp)
@@ -241,24 +262,41 @@ void do_mouse_hack (void)
 
 uae_u16 JOY0DAT (void)
 {
-    do_mouse_hack ();
+//write_log("JOY0DAT BEFORE mouseemulated:%d joy0dir:%d \n",mouseemulated,joy0dir);
 
+	do_mouse_hack ();
+	//return ((uae_u8)mouse_x) + ((uae_u16)mouse_y << 8) + joy0dir;
+//write_log("JOY0DAT AFTER mouseemulated:%d joy0dir:%d \n",mouseemulated,joy0dir);
+
+	//return joy0dir;
 #if  defined(__LIBRETRO__)
-        return ((uae_u8)mouse_x) | ((uae_u16)mouse_y << 8);
+        //apiso tentativo di tornare la direzione del joypad
+		//return ((uae_u8)mouse_x) | ((uae_u16)mouse_y << 8);
 #endif
-
 #ifdef RASPBERRY
-    if (currprefs.pandora_custom_dpad == 0)
-        return joy0dir;
-    if (currprefs.pandora_custom_dpad == 1)
-        return ((uae_u8)mouse_x) | ((uae_u16)mouse_y << 8);
+    if (mouseemulated == 0) 
+    {
+		//apiso    NON VA ATTENZIONE ALLE GRAFFE per il momento restituisco sempre joy0dir altrimenti non verrebbe
+		//mai restituito da valutare se usare pandora_custom_dpad che deve essere a 0 se MOUSE_EMULATED <0
+	//write_log("NO mouseemulated JOY0DAT %d \n" ,joy0dir);
+	
+	return joy0dir;
+	
+    }
+	else  
+	{ 
+	//write_log("mouseemulated mousex %d    mousey %d\n" ,mouse_x,mouse_y);
+
+	return ((uae_u8)mouse_x) | ((uae_u16)mouse_y << 8);
+	}
 #else
-    return ((uae_u8)mouse_x) + ((uae_u16)mouse_y << 8) + joy0dir;
+    //return ((uae_u8)mouse_x) + ((uae_u16)mouse_y << 8) + joy0dir;
 #endif
 }
 
 uae_u16 JOY1DAT (void)
 {
+	//write_log("JOY1DAT %d \n" ,joy1dir);
     return joy1dir;
 }
 
@@ -322,7 +360,9 @@ uae_u16 POT0DAT (void)
 void inputdevice_vsync (void)
 {
 	static int back_joy0button=0;
-
+	//Trick per far diventare il player 1 quello di destra,
+	//Amiga di standard nella porta 0 ha il mouse
+	//rimetto le direzioni come dovrebbero essere
 	getjoystate (0, &joy1dir, &joy1button);
 	getjoystate (1, &joy0dir, &joy0button);
 	if (joy0button!=back_joy0button)
@@ -367,7 +407,7 @@ void inputdevice_init (void)
   lastsampledmy = 0;
   
   init_joystick ();
- 	inputmode_init();
+  inputmode_init();
 }
 
 void inputdevice_close (void)

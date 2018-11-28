@@ -1617,7 +1617,7 @@ void default_prefs (struct uae_prefs *p, int type)
   memset (p, 0, sizeof (struct uae_prefs));
   strcpy (p->description, "UAE default configuration");
 
-  p->start_gui = 1;
+  p->start_gui = 0;
 
   p->all_lines = 0;
   p->produce_sound = 3;
@@ -1643,16 +1643,16 @@ void default_prefs (struct uae_prefs *p, int type)
 
   p->gfx_framerate = 0;
 #ifdef RASPBERRY
-  p->gfx_size.width = 640;
-  p->gfx_size.height = 256;
+  p->gfx_size.width = 320;
+  p->gfx_size.height = 240;
 #else
   p->gfx_size.width = 320;
   p->gfx_size.height = 240;
 #endif
   p->gfx_size_win.width = 320;
   p->gfx_size_win.height = 240;
-  p->gfx_size_fs.width = 640;
-  p->gfx_size_fs.height = 480;
+  p->gfx_size_fs.width = 320;
+  p->gfx_size_fs.height = 240;
   p->gfx_resolution = 0;
 #ifdef RASPBERRY
   p->gfx_correct_aspect = 1;

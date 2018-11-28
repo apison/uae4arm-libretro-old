@@ -9,6 +9,11 @@
 #include "sysconfig.h"
 #include "sysdeps.h"
 #include <assert.h>
+#include <string>
+#include <list>
+#include <stdio.h>
+#include <sstream>
+#include <ctype.h>
 #include "options.h"
 #include "td-sdl/thread.h"
 #include "uae.h"
@@ -52,13 +57,18 @@ extern int pauseg;
 
 long int version = 256*65536L*UAEMAJOR + 65536L*UAEMINOR + UAESUBREV;
 
-struct uae_prefs currprefs, changed_prefs; 
+struct uae_prefs currprefs, changed_prefs, tmp_prefs; 
 
 int no_gui = 0;
 int cloanto_rom = 0;
 int kickstart_rom = 1;
 
 struct gui_info gui_data;
+
+char bootdiskpth[MAX_DPATH];
+
+extern int autoloadslot;
+extern char *dirSavestate;
 
 /* If you want to pipe printer output to a file, put something like
  * "cat >>printerfile.tmp" above.
@@ -452,21 +462,82 @@ static void real_main2 (int argc, char **argv)
   SDL_Init (SDL_INIT_TIMER | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_NOPARACHUTE);
 #endif
 #endif
-
+ 
+ //apiso faccio backup prefs
+  
+  //write_log ("changed_prefs %d \n",changed_prefs.cpu_model);
+  	
+  tmp_prefs=changed_prefs;  
+  //write_log ("tmppref cpu %d \n",tmp_prefs.cpu_model);
+	
   if (restart_config[0]) {
 	  default_prefs (&currprefs, 0);
 	  fixup_prefs (&currprefs);
   }
-
+  //write_log ("currprefs cpu %d \n",currprefs.cpu_model);
+	
   if (! graphics_setup ()) {
 	abort();
   }
 
   if (restart_config[0])
+  {	  
+	//write_log ("parse_cmdline_and_init_file");
 	  parse_cmdline_and_init_file (argc, argv);
+	  //sovrascrivo con options passate da interfaccia retroarch
+	  overwrite_with_retroarch_opt();
+	//write_log ("changed_prefs cpu %d \n",changed_prefs.cpu_model);
+	//write_log ("tmppref cpu %d \n",tmp_prefs.cpu_model);
+	//write_log ("currprefs cpu %d \n",currprefs.cpu_model);
+	
+	  
+ }	  
   else
-  	currprefs = changed_prefs;
-
+  {
+	//write_log ("non ho parsato");
+  
+ 	currprefs = changed_prefs;
+  }
+  
+  //setto boot disk
+  strncpy(bootdiskpth,currprefs.df[0],MAX_DPATH);
+  
+  //se autoloadstate impostato carico lo state
+   if (autoloadslot!=0)
+   {
+	   //setto lo state
+	   int slot = autoloadslot ;
+		std::stringstream convert;   // stream used for the conversion
+		convert << slot-1;      
+		std::string strslot = convert.str();
+		//std::string sfpath=changed_prefs.df[0];
+		std::string sfpath=bootdiskpth;
+		std::size_t ffinedisk = sfpath.find_last_of("/")+1;
+		//wrong file name
+		if (ffinedisk==std::string::npos)return ;
+		std::string fname=sfpath.substr(ffinedisk,sfpath.length()-ffinedisk);
+		//std::string fpath=sfpath.substr(0,ffinedisk);
+		std::string sState = dirSavestate; 
+		sState.append(fname);
+		sState.append(".SAV");
+		sState.append(strslot);
+		//write_log("LOAD Slot: %d     Filename: %s \n",slot,sState.c_str());
+		//Verifico esistenza file
+		if (fname.length() > 0)				
+		{
+			FILE * f = fopen(sState.c_str(), "rbe");
+			if (f!=NULL)
+			{
+				fclose(f);
+				savestate_initsave(sState.c_str(), 2, 0);
+				savestate_state = STATE_DORESTORE;
+				//gui_running = false;
+				
+			}
+		}
+	}
+	
+  
   if (!machdep_init ()) {
 	  restart_program = 0;
 	  return;
@@ -549,6 +620,36 @@ static void real_main2 (int argc, char **argv)
 
 		start_program ();
 	}
+}
+
+void overwrite_with_retroarch_opt(void)
+{
+	currprefs.gfx_size.width = tmp_prefs.gfx_size.width;
+	currprefs.gfx_size.height = tmp_prefs.gfx_size.height ;
+	currprefs.gfx_size_win.width =tmp_prefs.gfx_size_win.width ;
+	currprefs.gfx_size_win.height = tmp_prefs.gfx_size_win.height; 
+	currprefs.gfx_size_fs.width =  tmp_prefs.gfx_size_fs.width;
+	currprefs.gfx_size_fs.height =  tmp_prefs.gfx_size_fs.height;
+	currprefs.leds_on_screen = tmp_prefs.leds_on_screen;
+	currprefs.collision_level = tmp_prefs.collision_level;
+	currprefs.cpu_model = tmp_prefs.cpu_model;
+	currprefs.address_space_24 = tmp_prefs.address_space_24;
+	currprefs.chipset_mask = tmp_prefs.chipset_mask;
+	currprefs.chipmem_size = tmp_prefs.chipmem_size;
+	
+	strcpy (currprefs.romfile, tmp_prefs.romfile);
+	currprefs.m68k_speed = tmp_prefs.m68k_speed;
+	currprefs.cpu_compatible = tmp_prefs.cpu_compatible;
+	currprefs.sound_stereo = tmp_prefs.sound_stereo;
+	currprefs.produce_sound = tmp_prefs.produce_sound;
+	currprefs.sound_freq = tmp_prefs.sound_freq;
+	currprefs.floppy_speed = tmp_prefs.floppy_speed;
+	currprefs.immediate_blits = tmp_prefs.immediate_blits;
+	currprefs.ntscmode =  tmp_prefs.ntscmode;
+	currprefs.gfx_correct_aspect = tmp_prefs.gfx_correct_aspect ;
+	currprefs.sound_interpol = tmp_prefs.sound_interpol ;
+	currprefs.gfx_framerate = tmp_prefs.gfx_framerate ;
+	currprefs.chipset_refreshrate = tmp_prefs.chipset_refreshrate ;
 }
 
 void real_main (int argc, char **argv)

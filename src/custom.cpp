@@ -4546,8 +4546,14 @@ STATIC_INLINE uae_u32 REGPARAM2 custom_wget_1 (uaecptr addr, int noput)
 
      case 0x008: v = 0xffff; break;
 
-     case 0x00A: v = JOY0DAT (); break;
-     case 0x00C: v =  JOY1DAT (); break;
+     case 0x00A: v = JOY0DAT (); 
+			     //apiso	custom_wget_1
+			     //write_log("0 wget Joy0dat: %d \n",v);
+			     break;
+     case 0x00C: v =  JOY1DAT (); 
+				  //apiso	custom_wget_1
+				 //write_log("1 wget Joy1dat: %d \n",v);
+				 break;
      case 0x00E: v =  CLXDAT (); break;
      case 0x010: v = ADKCONR (); break;
 
