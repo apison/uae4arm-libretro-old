@@ -867,7 +867,9 @@ void retro_run(void)
    {
 
 //testsnd(882*2*2);
-for(x=0;x<882*2;x+=2)audio_cb(SNDBUF[x],SNDBUF[x+2]);
+//for(x=0;x<882*2;x+=2)audio_cb(SNDBUF[x],SNDBUF[x+2]);
+//Fix for audio with SNDBUF[x+2] audio elaborate only one channel 
+for(x=0;x<882*2;x+=2)audio_cb(SNDBUF[x],SNDBUF[x+1]);
 
 
 		if(SHOWKEY )retro_virtualkb();
