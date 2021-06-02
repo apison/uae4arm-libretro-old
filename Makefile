@@ -2,7 +2,7 @@
 PLATFLAGS :=
 
 ifeq ($(platform),)
-platform = unix
+platform = pandora
 ifeq ($(shell uname -a),)
    platform = win
 else ifneq ($(findstring MINGW,$(shell uname -a)),)
@@ -68,6 +68,20 @@ else ifeq ($(platform), rpi2)
    	SHARED :=-shared -Wl,--version-script=$(CORE_DIR)/libretro/link.T -Wl,--no-undefined
 	PLATFORM_DEFINES += -marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
 	CPU_FLAGS +=  -marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -D__arm__ -DARM_ASM -D__NEON_OPT
+CPU_FLAGS= -marm -mcpu=cortex-a9 -mfloat-abi=hard -mfpu=neon -D__arm__ -DARM_ASM -D__NEON_OPT
+	PLATFORM_DEFINES +=   -DLSB_FIRST -DALIGN_DWORD -DWITH_LOGGING
+	HAVE_NEON = 1
+	USE_PICASSO96 = 1
+	CFLAGS += $(PLATFORM_DEFINES)
+	CXXFLAGS += $(PLATFORM_DEFINES)
+   	CC = gcc
+   	CXX = g++ 
+else ifeq ($(platform), pandora)
+    	TARGET := $(TARGET_NAME)_libretro.so
+   	fpic = -fPIC
+   	SHARED :=-shared -Wl,--version-script=$(CORE_DIR)/libretro/link.T -Wl,--no-undefined
+	PLATFORM_DEFINES += -marm -mcpu=cortex-a9 -mfloat-abi=hard -mfpu=neon
+	CPU_FLAGS +=  -marm -mcpu=cortex-a9 -mfloat-abi=hard -mfpu=neon -D__arm__ -DARM_ASM -D__NEON_OPT
 
 	PLATFORM_DEFINES +=   -DLSB_FIRST -DALIGN_DWORD -DWITH_LOGGING
 	HAVE_NEON = 1

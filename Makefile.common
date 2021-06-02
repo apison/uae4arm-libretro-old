@@ -4,9 +4,11 @@ LIBUTILS = $(CORE_DIR)/utils
 #GUI      = $(CORE_DIR)/src/gui-retro
 LIBRETRO = $(CORE_DIR)/libretro
 GUI	 := $(CORE_DIR)/libretro/gui
+DEPS_DIR = $(CORE_DIR)/deps
+
 
 INCFLAGS := -I$(EMU) -I$(EMU)/od-retro -I$(EMU)/include -I$(LIBRETRO) \
-	-I$(LIBRETRO)/libco -I$(LIBRETRO)/core -I$(LIBUTILS)  -I$(EMU)menu 
+	-I$(LIBRETRO)/libco -I$(LIBRETRO)/core -I$(LIBUTILS)  -I$(EMU)menu -I$(DEPS_DIR)/zlib 
 
 INCFLAGS += -I$(CORE_DIR)/libretro/libco \
 			-I$(CORE_DIR)/libretro/core \
@@ -197,4 +199,17 @@ OBJS += \
 
 SOURCES_C += 	 $(LIBRETRO)/libco/libco.c 
 
-
+SOURCES_C += $(DEPS_DIR)/zlib/adler32.o \
+	$(DEPS_DIR)/zlib/compress.o \
+	$(DEPS_DIR)/zlib/crc32.o \
+	$(DEPS_DIR)/zlib/deflate.o \
+	$(DEPS_DIR)/zlib/gzclose.o \
+	$(DEPS_DIR)/zlib/gzlib.o \
+	$(DEPS_DIR)/zlib/gzread.o \
+	$(DEPS_DIR)/zlib/gzwrite.o \
+	$(DEPS_DIR)/zlib/inffast.o \
+	$(DEPS_DIR)/zlib/inflate.o \
+	$(DEPS_DIR)/zlib/inftrees.o \
+	$(DEPS_DIR)/zlib/trees.o \
+	$(DEPS_DIR)/zlib/uncompr.o \
+	$(DEPS_DIR)/zlib/zutil.o
